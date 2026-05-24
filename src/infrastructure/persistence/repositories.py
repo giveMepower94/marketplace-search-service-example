@@ -1,6 +1,8 @@
 from typing import List
 
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.application.ports.repositories import SearchRepository, SortKey
@@ -21,10 +23,35 @@ class SQLAlchemySearchRepository(SearchRepository):
         category: str,
         city: str,
     ) -> None:
-        raise NotImplementedError
+        stmt = insert(SearchIndexModel).values(
+            ad_id=ad_id,
+            title=title,
+            description=description,
+            price=price,
+            category=category,
+            city=city,
+            indexed_at=func.now(),
+        )
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["ad_id"],
+            set_={
+                "title": stmt.excluded.title,
+                "description": stmt.excluded.description,
+                "price": stmt.excluded.price,
+                "category": stmt.excluded.category,
+                "city": stmt.excluded.city,
+                "indexed_at": func.now(),
+            },
+        )
+
+        await self._session.execute(stmt)
+        await self._session.flush()
 
     async def delete(self, ad_id: int) -> None:
-        raise NotImplementedError
+        await self._session.execute(
+            sa_delete(SearchIndexModel).where(SearchIndexModel.ad_id == ad_id)
+        )
+        await self._session.flush()
 
     async def search(
         self,
