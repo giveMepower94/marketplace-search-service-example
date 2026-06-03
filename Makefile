@@ -9,7 +9,7 @@ format:
 check: lint format
 
 test:
-	uv run pytest tests/ -v
+	uv run python -m pytest tests/ -v
 
 migrate:
 	uv run alembic upgrade head
