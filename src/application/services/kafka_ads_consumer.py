@@ -1,9 +1,11 @@
 import logging
 import typing
+import uuid
 
 from aiokafka import AIOKafkaConsumer
 
 from src.application.ports.usecases import IndexAdPort, RemoveAdPort
+from src.tracing import trace_id_var
 
 logger = logging.getLogger(__name__)
 
@@ -21,12 +23,24 @@ class KafkaAdsConsumer:
 
     async def run(self) -> None:
         async for msg in self._consumer:
+            trace_id = self._extract_trace_id(msg.headers)
+            token = trace_id_var.set(trace_id)
             try:
-                await self._handle(msg.value)
-            except Exception:
-                logger.exception("failed to handle message %s", msg)
-                continue
-            await self._consumer.commit()
+                try:
+                    await self._handle(msg.value)
+                except Exception:
+                    logger.exception("failed to handle message %s", msg)
+                    continue
+                await self._consumer.commit()
+            finally:
+                trace_id_var.reset(token)
+
+    @staticmethod
+    def _extract_trace_id(headers: list[tuple[str, bytes]]) -> str:
+        for key, value in headers:
+            if key.lower() == "x-trace-id":
+                return value.decode("utf-8")
+        return str(uuid.uuid4())
 
     async def _handle(self, value: dict[str, typing.Any]) -> None:
         event = value.get("event")
